@@ -54,6 +54,7 @@ export async function cached(key, ttl, fn) {
   const hit = await cache.match(req);
   if (hit) return (await hit.json()).value;
   const value = await fn();
+  if (value && value.err) return value;
   const resp = new Response(JSON.stringify({ value }), {
     headers: { "Cache-Control": `s-maxage=${ttl}` },
   });
@@ -189,7 +190,7 @@ function fmtInfo(f) {
 }
 
 export async function getVideoStreams(vid) {
-  return cached(`player:${vid}`, 3600, async () => {
+  return cached(`player:v2:${vid}`, 3600, async () => {
     const attempts = [
       { client: CLIENT_VR, visitor: "" },
       { client: CLIENT_VR, visitor: freshVisitor() },
