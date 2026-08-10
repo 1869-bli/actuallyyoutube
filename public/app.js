@@ -644,9 +644,9 @@ function openCommunityPlayer(vid) {
   $("#overlay").classList.add("hidden");
   const box = $("#com-player");
   box.classList.remove("hidden");
-  $("#com-iframe").src = "https://invidious.nerdvpn.de/embed/" + vid + "?autoplay=1";
-  $("#com-open").href = "https://invidious.nerdvpn.de/watch?v=" + vid;
-  toast("Community player opened (invidious.nerdvpn.de)");
+  $("#com-iframe").src = "https://invidious.tiekoetter.com/embed/" + vid + "?autoplay=1";
+  $("#com-open").href = "https://invidious.tiekoetter.com/watch?v=" + vid;
+  toast("Community player opened (invidious.tiekoetter.com)");
 }
 
 async function openVideo(listIndex) {
