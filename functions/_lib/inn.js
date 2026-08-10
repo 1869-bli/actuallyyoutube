@@ -389,13 +389,14 @@ const INV_APIS = [
 ];
 
 async function invidiousStreams(vid) {
-  for (const base of INV_APIS) {
-    try {
-      const ctrl = new AbortController();
-      const to = setTimeout(() => ctrl.abort(), 6000);
-      const r = await fetch(`${base}/api/v1/videos/${vid}?fields=formatStreams,adaptiveFormats,title,author,authorId,lengthSeconds,viewCount,publishedText,descriptionHtml`, { signal: ctrl.signal });
-      clearTimeout(to);
-      if (!r.ok) continue;
+  for (let round = 0; round < 3; round++) {
+    for (const base of INV_APIS) {
+      try {
+        const ctrl = new AbortController();
+        const to = setTimeout(() => ctrl.abort(), 6000);
+        const r = await fetch(`${base}/api/v1/videos/${vid}?fields=formatStreams,adaptiveFormats,title,author,authorId,lengthSeconds,viewCount,publishedText,descriptionHtml`, { signal: ctrl.signal });
+        clearTimeout(to);
+        if (!r.ok) continue;
       const j = await r.json();
       if (!j?.title) continue;
       const all = (j.adaptiveFormats || []).concat(j.formatStreams || []);
