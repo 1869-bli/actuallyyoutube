@@ -703,13 +703,20 @@ async function openVideo(listIndex) {
   const cf = $("#com-iframe");
   if (!cf.src.includes(v.id)) cf.src = "https://www.youtube-nocookie.com/embed/" + v.id + "?autoplay=1&rel=0";
   overlay.classList.remove("err");
-  $("#overlay-msg").textContent = "Preparing stream...";
+  $("#overlay-msg").textContent = "Trying direct server\u2026";
   mseClose();
   video.removeAttribute("src");
   video.load();
   state.player.total = 0;
   state.player.offset = 0;
   state.current = null;
+  state.embedActive = false;
+  setTimeout(() => {
+    if (state.current === null && !state.embedActive) {
+      state.embedActive = true;
+      openCommunityPlayer(v.id);
+    }
+  }, 4500);
   updateControls();
   renderSbMarkers();
   document.title = v.title + " \u2014 actuallyYOUtube";
@@ -733,8 +740,6 @@ async function openVideo(listIndex) {
       throw new Error(info.error);
     }
     state.current = info;
-    $("#com-player").classList.add("hidden");
-    $("#com-iframe").removeAttribute("src");
     renderMeta(info, v);
     state.player.total = info.duration || 0;
     updateControls();
@@ -743,6 +748,9 @@ async function openVideo(listIndex) {
     renderComments(v.id);
     video.poster = info.thumbnail;
     if (info.isLive) toast("Live streams may not play in this version.");
+    if (state.embedActive) return;
+    $("#com-player").classList.add("hidden");
+    $("#com-iframe").removeAttribute("src");
     setTimeout(() => {
       if (state.cloud) {
         startCloudPlay();
@@ -752,6 +760,7 @@ async function openVideo(listIndex) {
       }
     }, 150);
   } catch (e) {
+    if (state.embedActive) return;
     let inv = null;
     try { inv = await invidiousClient(v); } catch { inv = null; }
     if (inv) {
