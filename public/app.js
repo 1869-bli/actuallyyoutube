@@ -604,7 +604,24 @@ async function openVideo(listIndex) {
   try {
     const res = await fetch("/api/video?id=" + v.id);
     const info = await res.json();
-    if (info.error) throw new Error(info.error);
+    if (info.error) {
+      if (info.title || info.views || info.likes) {
+        $("#w-title").textContent = info.title || v.title;
+        $("#w-channel").textContent = info.channel || "";
+        if (info.description) {
+          $("#w-desc").textContent = info.description;
+          $("#w-desc-box").classList.remove("hidden");
+          $("#w-desc-box").open = true;
+        }
+        $("#w-stats").textContent = [
+          fmtViews(info.views),
+          info.likes ? "❤ " + fmtViews(info.likes) : "",
+          daysAgo(info.date),
+        ].filter(Boolean).join(" \u00B7 ");
+        renderComments(v.id);
+      }
+      throw new Error(info.error);
+    }
     state.current = info;
     state.player.total = info.duration || 0;
     $("#w-title").textContent = info.title;

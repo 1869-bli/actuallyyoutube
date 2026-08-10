@@ -244,6 +244,23 @@ async function playerFromPage(vid) {
   return { data: null, visitor };
 }
 
+function harvestMeta(data) {
+  const vd = data?.videoDetails;
+  if (!vd) return null;
+  const mf = data?.microformat?.playerMicroformatRenderer;
+  return {
+    title: vd.title,
+    channel: vd.author,
+    channel_id: vd.channelId || "",
+    views: vd.viewCount ? parseInt(vd.viewCount, 10) : null,
+    date: vd.uploadDate || "",
+    duration: vd.lengthSeconds ? parseInt(vd.lengthSeconds, 10) : null,
+    description: vd.shortDescription || "",
+    isLive: !!vd.isLiveContent,
+    likes: mf?.likes ? parseInt(mf.likes, 10) : null,
+  };
+}
+
 function pickInfo(data) {
   const vd = data?.videoDetails;
   if (!vd) return null;
@@ -372,14 +389,25 @@ async function invidiousStreams(vid) {
   return null;
 }
 
+function mergeInfo(info, meta) {
+  if (!info) return null;
+  if (!meta) return info;
+  for (const k of ["title", "channel", "channel_id", "views", "date", "duration", "description", "isLive", "likes"]) {
+    if (!info[k] && meta[k]) info[k] = meta[k];
+  }
+  return info;
+}
+
 export async function getVideoStreams(vid) {
-  return cached(`player:v5:${vid}`, 3600, async () => {
+  return cached(`player:v6:${vid}`, 3600, async () => {
     let page = null;
+    let meta = null;
     try {
       page = await playerFromPage(vid);
+      meta = harvestMeta(page?.data);
       if (page?.data?.playabilityStatus?.status === "OK" && page.data?.streamingData) {
         const info = pickInfo(page.data);
-        if (info && (info.formats.video.length || info.single)) return info;
+        if (info && (info.formats.video.length || info.single)) return mergeInfo(info, meta);
       }
     } catch { /* fall through to ladder */ }
     const realVisitor = page?.visitor || (await getVisitorData());
@@ -387,7 +415,7 @@ export async function getVideoStreams(vid) {
       const ep = await playerFromEmbed(vid);
       if (ep?.playabilityStatus?.status === "OK" && ep.streamingData) {
         const info = pickInfo(ep);
-        if (info && (info.formats.video.length || info.single)) return info;
+        if (info && (info.formats.video.length || info.single)) return mergeInfo(info, meta);
       }
     } catch { /* embed page unavailable */ }
     const attempts = [
@@ -420,6 +448,7 @@ export async function getVideoStreams(vid) {
         err: true,
         error: (lastStatus || "unknown") + ". " + pageNote + ". Retry later, or open the video on youtube.com once and try again.",
       };
+      if (meta) Object.assign(err, meta);
       return err;
     }
-    return pickInfo(data) || { err: true, error: "YouTube did not return playable streams for this video." };
+    return mergeInfo(pickInfo(data), meta) || { err: true, error: "YouTube did not return playable streams for this video." };
