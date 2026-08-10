@@ -429,6 +429,7 @@ async function invidiousStreams(vid) {
   }
   return null;
 }
+}
 
 function mergeInfo(info, meta) {
   if (!info) return null;
@@ -500,3 +501,5 @@ export async function getVideoStreams(vid) {
       return err;
     }
     return mergeInfo(pickInfo(data), meta) || { err: true, error: "YouTube did not return playable streams for this video." };
+  });
+}
