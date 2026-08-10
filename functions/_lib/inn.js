@@ -194,7 +194,9 @@ function fmtInfo(f) {
 }
 
 export async function getVisitorData() {
-  const cachedGet = await (await caches.default.match("https://ayt-cache.local/visitorData")).json().catch(() => null);
+  const cachedGet = await caches.default.match("https://ayt-cache.local/visitorData")
+    .then((r) => (r ? r.json() : null))
+    .catch(() => null);
   if (cachedGet && Date.now() - cachedGet.at < 25 * 60 * 1000) return cachedGet.v;
   try {
     const html = await (await fetch("https://www.youtube.com/watch?v=dQw4w9WgXcQ", {
