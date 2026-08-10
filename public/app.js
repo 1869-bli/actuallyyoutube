@@ -565,6 +565,69 @@ function startCloudPlay() {
   video.play().catch(() => {});
 }
 
+const INV_BASES = [
+  "https://invidious.f5.si",
+  "https://invidious.tiekoetter.com",
+  "https://yt.chocolatemoo53.com",
+  "https://invidious.nerdvpn.de",
+  "https://inv.nadeko.net",
+  "https://yewtu.be",
+];
+
+async function invidiousClient(v) {
+  for (const base of INV_BASES) {
+    try {
+      const r = await fetch(base + "/api/v1/videos/" + v.id + "?fields=formatStreams,adaptiveFormats,title,author,lengthSeconds,viewCount,publishedText,descriptionHtml,likeCount");
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (!j?.title) continue;
+      const af = (j.adaptiveFormats || []).filter((f) => f.url);
+      const video = af
+        .filter((f) => /video\//.test(f.type || "") && !/av01/.test(f.type || ""))
+        .map((f) => ({ itag: f.itag, url: f.url, codecs: f.type || "", height: parseInt(f.height, 10) || 0, bitrate: f.bitrate || 0 }))
+        .sort((a, b) => (b.height || 0) - (a.height || 0));
+      const audio = af
+        .filter((f) => /audio\//.test(f.type || ""))
+        .map((f) => ({ itag: f.itag, url: f.url, codecs: f.type || "", height: 0, bitrate: f.bitrate || 0 }))
+        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+      const prog = (j.formatStreams || []).filter((f) => f.url).sort((a, b) => (b.height || 0) - (a.height || 0))[0] || null;
+      if (!video.length && !audio.length && !prog) continue;
+      return {
+        id: v.id,
+        title: j.title,
+        channel: j.author || "",
+        channel_id: "",
+        views: j.viewCount || null,
+        likes: j.likeCount || null,
+        date: j.publishedText || "",
+        duration: parseInt(j.lengthSeconds, 10) || 0,
+        description: String(j.descriptionHtml || "").replace(/<[^>]*>/g, ""),
+        isLive: false,
+        single: prog ? prog.url : null,
+        formats: { video, audio },
+        via: "community",
+      };
+    } catch { /* try next instance */ }
+  }
+  return null;
+}
+
+function fillMeta(info) {
+  $("#w-title").textContent = info.title || state.results[state.index]?.title || "";
+  $("#w-channel").textContent = info.channel || "";
+  $("#w-stats").textContent = [
+    fmtViews(info.views),
+    info.likes ? "❤ " + fmtViews(info.likes) : "",
+    daysAgo(info.date),
+    info.duration ? fmtDur(info.duration) : "",
+  ].filter(Boolean).join(" \u00B7 ");
+  if (info.description) {
+    $("#w-desc").textContent = info.description;
+    $("#w-desc-box").classList.remove("hidden");
+    $("#w-desc-box").open = true;
+  }
+}
+
 /* ---------- watch ---------- */
 function playFrom(list, i) {
   if (!list[i]) return false;
@@ -673,6 +736,27 @@ async function openVideo(listIndex) {
       }
     }, 150);
   } catch (e) {
+    let inv = null;
+    try { inv = await invidiousClient(v); } catch { inv = null; }
+    if (inv) {
+      state.current = inv;
+      state.player.total = inv.duration || 0;
+      $("#overlay-msg").textContent = "Server blocked \u2014 playing via community servers\u2026";
+      overlay.classList.remove("err");
+      fillMeta(inv);
+      setSubButton(false);
+      updateControls();
+      renderSbMarkers();
+      setupSb(v.id, inv.duration);
+      renderComments(v.id);
+      const top = inv.formats.video.find((f) => f.url);
+      const src = inv.single || (top && top.url) || inv.formats.audio[0]?.url;
+      if (src) {
+        video.src = src;
+        video.play().catch(() => {});
+        return;
+      }
+    }
     overlay.classList.add("err");
     $("#overlay-msg").textContent = "Could not play \u2014 " + e.message;
   }
@@ -945,36 +1029,63 @@ function openAccMenu(forceForm) {
 }
 
 /* ---------- comments ---------- */
+async function invidiousComments(vid) {
+  for (const base of INV_BASES) {
+    try {
+      const r = await fetch(base + "/api/v1/comments/" + vid + "?sort_by=top");
+      if (!r.ok) continue;
+      const j = await r.json();
+      const list = (j && j.comments) || [];
+      if (!Array.isArray(list) || !list.length) continue;
+      return list.slice(0, 20).map((c) => ({
+        author: c.author || "?",
+        avatar: (c.authorThumbnails || []).filter((t) => t.url).pop()?.url || "",
+        text: c.content || "",
+        published: c.publishedText || "",
+        likes: c.likeCount || 0,
+        replies: c.replies?.count ?? 0,
+      }));
+    } catch { /* try next instance */ }
+  }
+  return null;
+}
+
 function renderComments(vid) {
   const box = $("#w-comments");
   const list = $("#w-comments-list");
   box.classList.add("hidden");
   list.innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  const paint = (comments, errMsg) => {
+    box.classList.remove("hidden");
+    list.innerHTML = "";
+    if (!comments || !comments.length) {
+      list.innerHTML = '<p class="muted">' + escapeHtml(errMsg || "No comments.") + "</p>";
+      return;
+    }
+    for (const c of comments) {
+      const row = document.createElement("div");
+      row.className = "comment";
+      const initial = (c.author || "?")[0]?.toUpperCase() || "?";
+      row.innerHTML = `<span class="cav"><img src="${escapeHtml(c.avatar)}" alt="" onerror="this.style.display='none'" onload="this.nextElementSibling.style.display='none'"><span class="letter">${initial}</span></span>
+        <div class="c-body"><p class="c-head"><b>${escapeHtml(c.author)}</b> <span class="muted">${escapeHtml(c.published)}</span></p>
+        <p>${escapeHtml(c.text)}</p>
+        <p class="muted small">👍 ${c.likes}${c.replies ? " \u00B7 " + c.replies + " replies" : ""}</p></div>`;
+      list.appendChild(row);
+    }
+  };
   fetch("/api/comments?id=" + vid)
     .then((r) => r.json())
-    .then((j) => {
-      box.classList.remove("hidden");
+    .then(async (j) => {
       if (j.error || !j.comments?.length) {
-        list.innerHTML = "";
-        list.innerHTML = '<p class="muted">' + escapeHtml(j.error || "No comments.") + "</p>";
+        const c = await invidiousComments(vid);
+        paint(c, j.error || "No comments." + (c ? "" : " Community servers also unreachable."));
         return;
       }
-      list.innerHTML = "";
-      for (const c of j.comments) {
-        const row = document.createElement("div");
-        row.className = "comment";
-        const initial = (c.author || "?")[0]?.toUpperCase() || "?";
-        row.innerHTML = `<span class="cav"><img src="${escapeHtml(c.avatar)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'letter',textContent:'${initial}'}))"><span class="letter" style="display:none">${initial}</span></span>
-          <div class="c-body"><p class="c-head"><b>${escapeHtml(c.author)}</b> <span class="muted">${escapeHtml(c.published)}</span></p>
-          <p>${escapeHtml(c.text)}</p>
-          <p class="muted small">👍 ${c.likes}${c.replies ? " \u00B7 " + c.replies + " replies" : ""}</p></div>`;
-        list.appendChild(row);
-      }
+      paint(j.comments);
     })
-    .catch(() => {
-      box.classList.remove("hidden");
-      list.innerHTML = "";
-      list.innerHTML = '<p class="muted">Comments unavailable right now.</p>';
+    .catch(async () => {
+      const c = await invidiousComments(vid);
+      paint(c, "Comments unavailable right now.");
     });
 }
 
