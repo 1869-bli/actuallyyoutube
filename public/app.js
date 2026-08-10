@@ -651,7 +651,45 @@ function openCommunityPlayer(vid) {
   toast("Community player is ready.");
 }
 
-async function openVideo(listIndex) {
+async function renderMeta(info, v) {
+  $("#w-title").textContent = info.title || v.title;
+  $("#w-channel").textContent = info.channel || "";
+  const initial = (info.channel || "?").trim()[0]?.toUpperCase() || "?";
+  $("#w-avatar").className = "avatar letter";
+  $("#w-avatar").textContent = initial;
+  if (info.channel_id) {
+    const cid = info.channel_id;
+    fetch("/api/channel?id=" + cid).then((r) => r.json()).then((ch) => {
+      if (okAvatar(ch.avatar) && state.current && state.current.channel_id === cid) {
+        const av = $("#w-avatar");
+        av.className = "avatar";
+        av.textContent = "";
+        const img = document.createElement("img");
+        img.src = ch.avatar;
+        img.style.cssText = "width:100%;height:100%;border-radius:50%;object-fit:cover;display:block";
+        img.onerror = () => { av.className = "avatar letter"; av.textContent = initial; };
+        img.alt = "";
+        av.appendChild(img);
+      }
+    }).catch(() => {});
+  }
+  $("#w-stats").textContent = [
+    fmtViews(info.views),
+    info.likes ? "❤ " + fmtViews(info.likes) : "",
+    daysAgo(info.date),
+    info.duration ? fmtDur(info.duration) : "",
+    info.channel_id ? "Subscribed \u2014 \u2713 saved locally" : "",
+  ].filter(Boolean).join(" \u00B7 ").replace(" \u00B7 Subscribed", "");
+  $("#w-original").href = "https://www.youtube.com/watch?v=" + v.id;
+  if (info.description) {
+    $("#w-desc").textContent = info.description;
+    $("#w-desc-box").classList.remove("hidden");
+    $("#w-desc-box").open = true;
+  }
+  setSubButton(isSubbed(info.channel_id));
+}
+
+function openVideo(listIndex) {
   const v = state.results[listIndex];
   if (!v) return;
   state.index = listIndex;
@@ -688,18 +726,8 @@ async function openVideo(listIndex) {
     const info = await res.json();
     if (info.error) {
       if (info.title || info.views || info.likes) {
-        $("#w-title").textContent = info.title || v.title;
-        $("#w-channel").textContent = info.channel || "";
-        if (info.description) {
-          $("#w-desc").textContent = info.description;
-          $("#w-desc-box").classList.remove("hidden");
-          $("#w-desc-box").open = true;
-        }
-        $("#w-stats").textContent = [
-          fmtViews(info.views),
-          info.likes ? "❤ " + fmtViews(info.likes) : "",
-          daysAgo(info.date),
-        ].filter(Boolean).join(" \u00B7 ");
+        state.current = info;
+        renderMeta(info, v);
         renderComments(v.id);
       }
       throw new Error(info.error);
@@ -707,41 +735,8 @@ async function openVideo(listIndex) {
     state.current = info;
     $("#com-player").classList.add("hidden");
     $("#com-iframe").removeAttribute("src");
+    renderMeta(info, v);
     state.player.total = info.duration || 0;
-    $("#w-title").textContent = info.title;
-    $("#w-channel").textContent = info.channel;
-    const initial = (info.channel || "?").trim()[0]?.toUpperCase() || "?";
-    $("#w-avatar").className = "avatar letter";
-    $("#w-avatar").textContent = initial;
-    if (info.channel_id) {
-      fetch("/api/channel?id=" + info.channel_id).then((r) => r.json()).then((ch) => {
-        if (okAvatar(ch.avatar) && state.current && state.current.channel_id === info.channel_id) {
-          const av = $("#w-avatar");
-          av.className = "avatar";
-          av.textContent = "";
-          const img = document.createElement("img");
-          img.src = ch.avatar;
-          img.style.cssText = "width:100%;height:100%;border-radius:50%;object-fit:cover;display:block";
-          img.onerror = () => { av.className = "avatar letter"; av.textContent = initial; };
-          img.alt = "";
-          av.appendChild(img);
-        }
-      }).catch(() => {});
-    }
-    $("#w-stats").textContent = [
-      fmtViews(info.views),
-      info.likes ? "❤ " + fmtViews(info.likes) : "",
-      daysAgo(info.date),
-      info.duration ? fmtDur(info.duration) : "",
-      info.channel_id ? "Subscribed \u2014 \u2713 saved locally" : "",
-    ].filter(Boolean).join(" \u00B7 ").replace(" \u00B7 Subscribed", "");
-    $("#w-original").href = "https://www.youtube.com/watch?v=" + v.id;
-    if (info.description) {
-      $("#w-desc").textContent = info.description;
-      $("#w-desc-box").classList.remove("hidden");
-      $("#w-desc-box").open = true;
-    }
-    setSubButton(isSubbed(info.channel_id));
     updateControls();
     renderSbMarkers();
     setupSb(v.id, info.duration);
