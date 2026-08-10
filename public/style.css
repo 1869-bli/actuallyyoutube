@@ -327,19 +327,25 @@ main { flex: 1; width: 100%; max-width: 1500px; margin: 0 auto; padding: 20px 18
 
 .overlay {
   position: absolute;
-  inset: 0;
+  top: 12px;
+  left: 12px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
-  background: rgba(0, 0, 0, 0.5);
-  z-index: 5;
-  text-align: center;
-  padding: 20px;
+  gap: 10px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.62);
+  z-index: 6;
   pointer-events: none;
+  max-width: 70%;
 }
-.overlay p { color: #fff; font-size: 0.95rem; }
+.overlay p { color: #fff; font-size: 0.8rem; margin: 0; }
+.overlay .spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  flex: none;
+}
 .spinner {
   width: 46px;
   height: 46px;
