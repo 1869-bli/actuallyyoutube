@@ -652,6 +652,7 @@ function openCommunityPlayer(vid) {
 }
 
 async function renderMeta(info, v) {
+  if (!info.channel_id && v.channel_id) { info.channel_id = v.channel_id; info.channel = info.channel || v.channel; }
   $("#w-title").textContent = info.title || v.title;
   $("#w-channel").textContent = info.channel || "";
   const initial = (info.channel || "?").trim()[0]?.toUpperCase() || "?";
