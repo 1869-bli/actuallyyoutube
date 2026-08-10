@@ -193,6 +193,85 @@ function fmtInfo(f) {
   return { itag: f.itag, url: f.url, codecs: f.mimeType || "", height: f.height, width: f.width, bitrate: f.bitrate };
 }
 
+function decipherUrl(f) {
+  if (f.url) return f.url;
+  if (!f.signatureCipher && !f.cipher) return "";
+  const qs = new URLSearchParams(f.signatureCipher || f.cipher);
+  const url = qs.get("url") || "";
+  const sig = qs.get("s") || "";
+  const sp = qs.get("sp") || "signature";
+  if (!sig) return url;
+  const u = new URL(url);
+  u.searchParams.set(sp, sig);
+  return u.toString();
+}
+
+async function playerFromPage(vid) {
+  const resp = await fetch(`https://www.youtube.com/watch?v=${vid}&hl=en&gl=US`, {
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9" },
+  });
+  if (!resp.ok) return null;
+  const html = await resp.text();
+  const key = "ytInitialPlayerResponse";
+  let idx = html.indexOf(key);
+  while (idx >= 0) {
+    const before = html.slice(idx + key.length, idx + key.length + 20);
+    if (/^\s*=/.test(before)) {
+      let i = idx + key.length;
+      while (i < html.length && html[i] !== "{") i++;
+      let depth = 0, instr = false, esc = false;
+      for (; i < html.length; i++) {
+        const ch = html[i];
+        if (instr) {
+          if (esc) esc = false;
+          else if (ch === "\\") esc = true;
+          else if (ch === '"') instr = false;
+        } else if (ch === '"') instr = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}") { depth--; if (!depth) break; }
+      }
+      try {
+        return JSON.parse(html.slice(html.lastIndexOf("{", i), i + 1));
+      } catch { /* try next occurrence */ }
+    }
+    idx = html.indexOf(key, idx + key.length);
+  }
+  const em = html.match(/"ytInitialPlayerResponse"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+  if (em) {
+    try { return JSON.parse(JSON.parse('"' + em[1] + '"')); } catch { /* not json */ }
+  }
+  return null;
+}
+
+function pickInfo(data) {
+  const vd = data?.videoDetails;
+  if (!vd) return null;
+  const sd = data?.streamingData || {};
+  const all = (sd.formats || []).concat(sd.adaptiveFormats || []);
+  const withUrl = all.map((f) => ({ ...f, url: f.url || decipherUrl(f) })).filter((f) => f.url);
+  const video = withUrl
+    .filter((f) => /video\/mp4/.test(f.mimeType || "") && !/av01/.test(f.mimeType || ""))
+    .map(fmtInfo)
+    .sort((a, b) => (b.height || 0) - (a.height || 0));
+  const audio = withUrl
+    .filter((f) => /audio\/mp4/.test(f.mimeType || ""))
+    .map(fmtInfo)
+    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+  const prog = pickProgressive(sd.formats);
+  return {
+    title: vd.title,
+    channel: vd.author,
+    channel_id: vd.channelId || "",
+    views: vd.viewCount ? parseInt(vd.viewCount, 10) : null,
+    date: vd.uploadDate || "",
+    duration: vd.lengthSeconds ? parseInt(vd.lengthSeconds, 10) : null,
+    description: vd.shortDescription || "",
+    isLive: !!vd.isLiveContent,
+    single: prog ? prog.url : null,
+    formats: { video, audio },
+  };
+}
+
 export async function getVisitorData() {
   const cachedGet = await caches.default.match("https://ayt-cache.local/visitorData")
     .then((r) => (r ? r.json() : null))
@@ -212,7 +291,14 @@ export async function getVisitorData() {
 }
 
 export async function getVideoStreams(vid) {
-  return cached(`player:v3:${vid}`, 3600, async () => {
+  return cached(`player:v4:${vid}`, 3600, async () => {
+    try {
+      const page = await playerFromPage(vid);
+      if (page?.playabilityStatus?.status === "OK" && page?.streamingData) {
+        const info = pickInfo(page);
+        if (info && (info.formats.video.length || info.single)) return info;
+      }
+    } catch { /* fall through to ladder */ }
     const realVisitor = await getVisitorData();
     const attempts = [
       { client: CLIENT_VR, visitor: "" },
@@ -234,29 +320,6 @@ export async function getVideoStreams(vid) {
       const err = { err: true, error: "YouTube blocked this request (bot check). Try again in a few minutes." };
       return err;
     }
-    const sd = data?.streamingData || {};
-    const all = (sd.formats || []).concat(sd.adaptiveFormats || []);
-    const withUrl = all.filter((f) => f.url);
-    const video = withUrl
-      .filter((f) => /video\/mp4/.test(f.mimeType || "") && !/av01/.test(f.mimeType || ""))
-      .map(fmtInfo)
-      .sort((a, b) => (b.height || 0) - (a.height || 0));
-    const audio = withUrl
-      .filter((f) => /audio\/mp4/.test(f.mimeType || ""))
-      .map(fmtInfo)
-      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-    const prog = pickProgressive(sd.formats);
-    return {
-      title: vd.title,
-      channel: vd.author,
-      channel_id: vd.channelId || "",
-      views: vd.viewCount ? parseInt(vd.viewCount, 10) : null,
-      date: vd.uploadDate || "",
-      duration: vd.lengthSeconds ? parseInt(vd.lengthSeconds, 10) : null,
-      description: vd.shortDescription || "",
-      isLive: !!vd.isLiveContent,
-      single: prog ? prog.url : null,
-      formats: { video, audio },
-    };
+    return pickInfo(data) || { err: true, error: "YouTube did not return playable streams for this video." };
   });
 }
