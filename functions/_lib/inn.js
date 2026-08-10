@@ -44,7 +44,11 @@ export async function ytJson(endpoint, data, extraContext = {}, client = CLIENT_
       body,
     });
   }
-  const payload = await resp.json();
+  let payload = {};
+  try {
+    const text = await resp.text();
+    try { payload = JSON.parse(text); } catch { /* html or empty */ }
+  } catch { /* body read failed */ }
   return { status: resp.status, data: payload };
 }
 
@@ -192,15 +196,18 @@ function fmtInfo(f) {
 export async function getVideoStreams(vid) {
   return cached(`player:v2:${vid}`, 3600, async () => {
     const attempts = [
-      { client: CLIENT_VR, visitor: "" },
-      { client: CLIENT_VR, visitor: freshVisitor() },
-      { client: { ...CLIENT_VR, androidSdkVersion: 31 }, visitor: freshVisitor() },
-      { client: { ...CLIENT_VR, clientVersion: "1.60.20" }, visitor: freshVisitor() },
+      { client: CLIENT_VR, visitor: "", extra: {} },
+      { client: CLIENT_VR, visitor: freshVisitor(), extra: {} },
+      { client: { ...CLIENT_VR, androidSdkVersion: 31 }, visitor: freshVisitor(), extra: {} },
+      { client: { ...CLIENT_VR, clientVersion: "1.60.20" }, visitor: freshVisitor(), extra: {} },
+      { client: CLIENT_VR, visitor: freshVisitor(), extra: { thirdParty: { embedUrl: "https://www.youtube.com/" } } },
     ];
     let data = null;
     for (const a of attempts) {
-      const r = await ytJson("player", { videoId: vid }, { hl: "en", gl: "US" }, a.client, a.visitor);
-      if (r.data?.playabilityStatus?.status === "OK") { data = r.data; break; }
+      try {
+        const r = await ytJson("player", { videoId: vid }, { hl: "en", gl: "US", ...a.extra }, a.client, a.visitor);
+        if (r.data?.playabilityStatus?.status === "OK") { data = r.data; break; }
+      } catch { /* keep trying */ }
       await new Promise((res) => setTimeout(res, 700));
     }
     const vd = data?.videoDetails;
