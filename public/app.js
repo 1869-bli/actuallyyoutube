@@ -637,6 +637,18 @@ function playFrom(list, i) {
   return true;
 }
 
+function openCommunityPlayer(vid) {
+  const wrap = $("#wrap");
+  $("#player").classList.add("hidden");
+  $("#ctrl").classList.add("hidden");
+  $("#overlay").classList.add("hidden");
+  const box = $("#com-player");
+  box.classList.remove("hidden");
+  $("#com-iframe").src = "https://invidious.nerdvpn.de/embed/" + vid + "?autoplay=1";
+  $("#com-open").href = "https://invidious.nerdvpn.de/watch?v=" + vid;
+  toast("Community player opened (invidious.nerdvpn.de)");
+}
+
 async function openVideo(listIndex) {
   const v = state.results[listIndex];
   if (!v) return;
@@ -645,6 +657,9 @@ async function openVideo(listIndex) {
   show("watch");
   const video = $("#player");
   const overlay = $("#overlay");
+  $("#player").classList.remove("hidden");
+  $("#ctrl").classList.remove("hidden");
+  $("#com-player").classList.add("hidden");
   overlay.classList.remove("err");
   $("#overlay-msg").textContent = "Preparing stream...";
   mseClose();
@@ -757,8 +772,8 @@ async function openVideo(listIndex) {
         return;
       }
     }
-    overlay.classList.add("err");
-    $("#overlay-msg").textContent = "Could not play \u2014 " + e.message;
+    openCommunityPlayer(v.id);
+    return;
   }
 }
 
