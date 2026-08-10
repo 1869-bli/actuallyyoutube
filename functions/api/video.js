@@ -18,5 +18,6 @@ export async function onRequest(context) {
     thumbnail: `https://i.ytimg.com/vi/${vid}/maxresdefault.jpg`,
     thumb_alt: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
     stream: { video: null, audio: null, single: info.single },
+    formats: info.formats || { video: [], audio: [] },
   });
 }

@@ -109,8 +109,8 @@ function seekTo(t) {
   t = Math.min(Math.max(0, t), total);
   if (Math.abs(t - absTime()) < 1.2) return;
   if (state.cloud) {
-    const v = $("#player");
-    v.currentTime = t;
+    if (mse.active) mseSeek(t);
+    else $("#player").currentTime = t;
     return;
   }
   const offset = state.player.offset || 0;
@@ -281,6 +281,286 @@ function renderCards(list, into, onclick, grouped = false) {
   });
 }
 
+/* ---------- MSE mux (web HD: browser merges video+audio tracks) ---------- */
+const mse = {
+  active: false,
+  ms: null,
+  sbv: null,
+  sba: null,
+  gen: 0,
+  tracks: {},
+  tables: {},
+  gotInit: { v: false, a: false },
+  failed: 0,
+};
+
+function mseClose() {
+  mse.gen++;
+  mse.active = false;
+  for (const k of ["v", "a"]) {
+    const t = mse.tracks[k];
+    if (t && t.signal) { try { t.signal.abort(); } catch { /* ok */ } }
+  }
+  mse.tracks = {};
+  if (mse.ms && mse.ms.readyState !== "closed") {
+    try { mse.ms.endOfStream(); } catch { /* ok */ }
+  }
+  mse.sbv = null;
+  mse.sba = null;
+  mse.ms = null;
+  mse.tables = {};
+}
+
+function mseQuality() {
+  const vf = state.current?.formats?.video || [];
+  const af = state.current?.formats?.audio || [];
+  if (typeof MediaSource === "undefined") return 0;
+  for (const f of vf) {
+    if (!f.url) continue;
+    if (mse.usable(f.codecs)) return { vid: f, aud: af.find((x) => mse.usable(x.codecs)) };
+  }
+  return 0;
+}
+mse.usable = (mime) => {
+  try {
+    return !!(window.MediaSource && window.MediaSource.isTypeSupported(mime));
+  } catch { return false; }
+};
+
+function mseStart() {
+  const q = mseQuality();
+  if (!q || !q.aud) return false;
+  const video = $("#player");
+  try {
+    mse.ms = new MediaSource();
+    mse.active = true;
+    mse.gotInit = { v: false, a: false };
+    video.src = URL.createObjectURL(mse.ms);
+    mse.ms.addEventListener("sourceopen", () => {
+      try {
+        mse.sbv = mse.ms.addSourceBuffer(q.vid.codecs);
+        mse.sba = mse.ms.addSourceBuffer(q.aud.codecs);
+        mse.sbv._q = [];
+        mse.sba._q = [];
+        mse.sbv.addEventListener("updateend", () => { msePump(mse.sbv); mseAfter(mse.sbv); });
+        mse.sba.addEventListener("updateend", () => { msePump(mse.sba); mseAfter(mse.sba); });
+        mseRun("v", q.vid.url, 0);
+        mseRun("a", q.aud.url, 0);
+      } catch (e) {
+        mseFail("init: " + e.message);
+      }
+    });
+    return true;
+  } catch (e) {
+    mseFail("mse: " + e.message);
+    return false;
+  }
+}
+
+function msePump(sb) {
+  if (sb.updating) return;
+  const d = (sb._q || []).shift();
+  if (!d) return;
+  try { sb.appendBuffer(d); } catch (e) { mseFail("append: " + e.message); }
+}
+
+function mseAfter(sb) {
+  const after = sb._after;
+  if (after) { sb._after = null; after(); }
+  if (!sb._q?.length && mse.tracks.v?.done && mse.tracks.a?.done && !sb.updating) {
+    try { if (mse.ms && mse.ms.readyState === "open") mse.ms.endOfStream(); } catch { /* ok */ }
+  }
+}
+
+function concatArrays(list) {
+  let len = 0;
+  for (const p of list) len += p.length;
+  const out = new Uint8Array(len);
+  let off = 0;
+  for (const p of list) { out.set(p, off); off += p.length; }
+  return out;
+}
+
+function parseSidx(box, boxEndAbs) {
+  try {
+    const dv = new DataView(box.buffer, box.byteOffset, box.byteLength);
+    const ver = dv.getUint8(0);
+    const timescale = dv.getUint32(16) || 1;
+    let p;
+    let ept, firstOffset;
+    if (ver === 0) {
+      ept = dv.getUint32(20);
+      firstOffset = dv.getUint32(24);
+      p = 28;
+    } else {
+      ept = Number(dv.getBigUint64(20));
+      firstOffset = Number(dv.getBigUint64(28));
+      p = 36;
+    }
+    const count = dv.getUint16(p + 2);
+    const anchor = boxEndAbs + Number(firstOffset);
+    const entries = [];
+    let time = ept, total = 0;
+    for (let i = 0; i < count; i++) {
+      const e = p + 4 + i * 12;
+      const size = dv.getUint32(e) & 0x7fffffff;
+      const dur = dv.getUint32(e + 4);
+      entries.push({ t: time / timescale, dur: dur / timescale, start: anchor + total });
+      time += dur;
+      total += size;
+    }
+    return entries;
+  } catch { return null; }
+}
+
+function pickEntry(table, t) {
+  let best = null;
+  for (const e of table || []) {
+    if (e.t <= t + 0.05) best = e;
+    else break;
+  }
+  return best;
+}
+
+async function mseRun(tag, url, startByte) {
+  const gen = mse.gen;
+  const track = { done: false, signal: null, initDone: false };
+  mse.tracks[tag] = track;
+  if (startByte === 0) mse.initParts = mse.initParts || {};
+  const sb = tag === "v" ? mse.sbv : mse.sba;
+  try {
+    const ctrl = new AbortController();
+    track.signal = ctrl;
+    const resp = await fetch("/api/raw?u=" + encodeURIComponent(url), {
+      signal: ctrl.signal,
+      headers: startByte > 0 ? { Range: "bytes=" + startByte + "-" } : {},
+    });
+    if (!resp.ok || !resp.body) throw new Error("track " + resp.status);
+    const reader = resp.body.getReader();
+    let buf = new Uint8Array(0);
+    let eof = false;
+    let frag = null;
+    const take = async (n) => {
+      while (buf.length < n && !eof) {
+        const { done, value } = await reader.read();
+        if (done) { eof = true; break; }
+        const nb = new Uint8Array(buf.length + value.length);
+        nb.set(buf);
+        nb.set(value, buf.length);
+        buf = nb;
+      }
+      return buf.length >= n;
+    };
+    while (!eof) {
+      if (mse.gen !== gen) return;
+      if (!(await take(8))) break;
+      let size = (buf[0] << 24 | buf[1] << 16 | buf[2] << 8 | buf[3]) >>> 0;
+      const type = String.fromCharCode(buf[4], buf[5], buf[6], buf[7]);
+      if (size === 1) {
+        if (!(await take(16))) break;
+        const lo = (buf[8] << 24 | buf[9] << 16 | buf[10] << 8 | buf[11]) >>> 0;
+        const hi = (buf[12] << 24 | buf[13] << 16 | buf[14] << 8 | buf[15]) >>> 0;
+        size = hi * 0x100000000 + lo;
+      }
+      if (size === 0) break;
+      if (!(await take(size))) break;
+      const abs = startByte + (mse.tracks[tag]._off || 0);
+      const data = buf.subarray(0, size);
+      buf = buf.subarray(size);
+      mse.tracks[tag]._off = (mse.tracks[tag]._off || 0) + size;
+      if (type === "sidx" && startByte === 0 && !mse.tables[tag]) {
+        mse.tables[tag] = parseSidx(data, abs + size);
+      } else if (type === "moof") {
+        if (startByte === 0 && !track.initDone && mse.initParts[tag]) {
+          track.initDone = true;
+          sb._q.push(concatArrays(mse.initParts[tag]));
+          msePump(sb);
+        }
+        frag = [data];
+      } else if (type === "mdat" && frag) {
+        frag.push(data);
+        const blob = concatArrays(frag);
+        frag = null;
+        if (mse.gen !== gen) return;
+        if (startByte === 0) mse.gotInit[tag] = true;
+        sb._q.push(blob);
+        msePump(sb);
+      } else if ((type === "ftyp" || type === "moov") && startByte === 0) {
+        (mse.initParts[tag] = mse.initParts[tag] || []).push(data);
+      }
+    }
+    track.done = true;
+    mseAfter(sb);
+  } catch (e) {
+    if (mse.gen === gen && e.name !== "AbortError") mseFail("track: " + e.message);
+  }
+}
+
+function mseRange(t) {
+  const sb = mse.sbv;
+  if (!sb || !sb.buffered || !sb.buffered.length) return null;
+  const b = sb.buffered;
+  return { start: b.start(0), end: b.end(b.length - 1) };
+}
+
+function mseSeek(t) {
+  const video = $("#player");
+  const r = mseRange(t);
+  if (r && t >= r.start - 0.2 && t <= r.end) {
+    video.currentTime = t;
+    return;
+  }
+  const total = state.player.total || 0;
+  if (!total || r === null || t >= total) { video.currentTime = t; return; }
+  const vEntry = pickEntry(mse.tables.v, t);
+  const aEntry = pickEntry(mse.tables.a, t);
+  if (!vEntry || !aEntry || !mse.gotInit.v || !mse.gotInit.a) { video.currentTime = t; return; }
+  mse.gen++;
+  const gen = mse.gen;
+  for (const sb of [mse.sbv, mse.sba]) {
+    if (!sb) continue;
+    sb._q = [];
+    removeAll(sb);
+  }
+  mseRun("v", state.current.formats.video.find((f) => f.url)?.url || "", vEntry.start);
+  mseRun("a", state.current.formats.audio.find((f) => f.url)?.url || "", aEntry.start);
+  video.currentTime = t;
+}
+
+function removeAll(sb) {
+  if (!sb || !sb.buffered || !sb.buffered.length) return;
+  if (sb.updating) { sb._after = () => removeAll(sb); return; }
+  try { sb.remove(0, sb.buffered.end(sb.buffered.length - 1)); } catch { /* ok */ }
+}
+
+function mseFail(msg) {
+  if (mse.failed > 0) return;
+  mse.failed++;
+  mseClose();
+  const video = $("#player");
+  video.removeAttribute("src");
+  video.load();
+  toast("HD mux failed (" + msg + ") \u2014 falling back to low-res stream");
+  setTimeout(() => {
+    video.src = "/api/stream?id=" + (state.current?.id || "");
+    video.play().catch(() => {});
+  }, 150);
+}
+
+function startCloudPlay() {
+  mse.failed = 0;
+  const v = state.current?.formats?.video?.find((f) => f.url);
+  if (v && mse.usable(v.codecs)) {
+    if (mseStart()) {
+      toast(v.height >= 720 ? v.height + "p \u2022 web mux" : v.height + "p");
+      return;
+    }
+  }
+  const video = $("#player");
+  video.src = "/api/stream?id=" + state.current.id;
+  video.play().catch(() => {});
+}
+
 /* ---------- watch ---------- */
 function playFrom(list, i) {
   if (!list[i]) return false;
@@ -300,6 +580,7 @@ async function openVideo(listIndex) {
   const overlay = $("#overlay");
   overlay.classList.remove("err");
   $("#overlay-msg").textContent = "Preparing stream...";
+  mseClose();
   video.removeAttribute("src");
   video.load();
   state.player.total = 0;
@@ -360,8 +641,12 @@ async function openVideo(listIndex) {
     video.poster = info.thumbnail;
     if (info.isLive) toast("Live streams may not play in this version.");
     setTimeout(() => {
-      video.src = "/api/stream?id=" + v.id;
-      video.play().catch(() => {});
+      if (state.cloud) {
+        startCloudPlay();
+      } else {
+        video.src = "/api/stream?id=" + v.id;
+        video.play().catch(() => {});
+      }
     }, 150);
   } catch (e) {
     overlay.classList.add("err");

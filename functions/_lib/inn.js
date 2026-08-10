@@ -176,6 +176,10 @@ export function pickProgressive(formats) {
   return pool.sort((a, b) => (b.height || 0) - (a.height || 0))[0] || null;
 }
 
+function fmtInfo(f) {
+  return { itag: f.itag, url: f.url, codecs: f.mimeType || "", height: f.height, width: f.width, bitrate: f.bitrate };
+}
+
 export async function getVideoStreams(vid) {
   return cached(`player:${vid}`, 900, async () => {
     const { data } = await ytJson("player", { videoId: vid }, {}, CLIENT_VR);
@@ -185,7 +189,18 @@ export async function getVideoStreams(vid) {
       const err = { error: data?.playabilityStatus?.reason || data?.playabilityStatus?.status || "unplayable" };
       return { err };
     }
-    const prog = pickProgressive(data?.streamingData?.formats);
+    const sd = data?.streamingData || {};
+    const all = (sd.formats || []).concat(sd.adaptiveFormats || []);
+    const withUrl = all.filter((f) => f.url);
+    const video = withUrl
+      .filter((f) => /video\/mp4/.test(f.mimeType || "") && !/av01/.test(f.mimeType || ""))
+      .map(fmtInfo)
+      .sort((a, b) => (b.height || 0) - (a.height || 0));
+    const audio = withUrl
+      .filter((f) => /audio\/mp4/.test(f.mimeType || ""))
+      .map(fmtInfo)
+      .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+    const prog = pickProgressive(sd.formats);
     return {
       title: vd.title,
       channel: vd.author,
@@ -196,6 +211,7 @@ export async function getVideoStreams(vid) {
       description: vd.shortDescription || "",
       isLive: !!vd.isLiveContent,
       single: prog ? prog.url : null,
+      formats: { video, audio },
     };
   });
 }
