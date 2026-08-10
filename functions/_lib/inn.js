@@ -328,6 +328,39 @@ async function playerFromEmbed(vid) {
   return null;
 }
 
+async function playerFromMobilePage(vid) {
+  const resp = await fetch(`https://m.youtube.com/watch?v=${vid}&hl=en&gl=US`, {
+    headers: { "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1", "Accept-Language": "en-US,en;q=0.9" },
+  });
+  if (!resp.ok) return null;
+  const html = await resp.text();
+  const key = "ytInitialPlayerResponse";
+  let idx = html.indexOf(key);
+  while (idx >= 0) {
+    if (/^\s*=/.test(html.slice(idx + key.length, idx + key.length + 20))) {
+      let i = html.indexOf("{", idx);
+      let depth = 0, instr = false, esc = false;
+      for (; i < html.length; i++) {
+        const ch = html[i];
+        if (instr) {
+          if (esc) esc = false;
+          else if (ch === "\\") esc = true;
+          else if (ch === '"') instr = false;
+        } else if (ch === '"') instr = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}") { depth--; if (!depth) break; }
+      }
+      try { return JSON.parse(html.slice(html.lastIndexOf("{", i), i + 1)); } catch { /* next */ }
+    }
+    idx = html.indexOf(key, idx + key.length);
+  }
+  const em = html.match(/"ytInitialPlayerResponse"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+  if (em) {
+    try { return JSON.parse(JSON.parse('"' + em[1] + '"')); } catch { /* not json */ }
+  }
+  return null;
+}
+
 export async function getVisitorData() {
   const cachedGet = await caches.default.match("https://ayt-cache.local/visitorData")
     .then((r) => (r ? r.json() : null))
@@ -418,6 +451,13 @@ export async function getVideoStreams(vid) {
         if (info && (info.formats.video.length || info.single)) return mergeInfo(info, meta);
       }
     } catch { /* embed page unavailable */ }
+    try {
+      const mp = await playerFromMobilePage(vid);
+      if (mp?.playabilityStatus?.status === "OK" && mp.streamingData) {
+        const info = pickInfo(mp);
+        if (info && (info.formats.video.length || info.single)) return mergeInfo(info, meta);
+      }
+    } catch { /* mobile page unavailable */ }
     const attempts = [
       { client: CLIENT_VR, visitor: page?.visitor || "" },
       { client: CLIENT_VR, visitor: realVisitor },
