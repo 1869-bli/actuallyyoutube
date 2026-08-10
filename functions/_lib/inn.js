@@ -273,6 +273,40 @@ function pickInfo(data) {
   };
 }
 
+async function playerFromEmbed(vid) {
+  const resp = await fetch(`https://www.youtube-nocookie.com/embed/${vid}?hl=en&gl=US`, {
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36", "Accept-Language": "en-US,en;q=0.9" },
+  });
+  if (!resp.ok) return null;
+  const html = await resp.text();
+  if (/reload|Sign in to confirm/i.test(html) && !/"ytInitialPlayerResponse"/.test(html)) return null;
+  const key = "ytInitialPlayerResponse";
+  let idx = html.indexOf(key);
+  while (idx >= 0) {
+    if (/^\s*=/.test(html.slice(idx + key.length, idx + key.length + 20))) {
+      let i = html.indexOf("{", idx);
+      let depth = 0, instr = false, esc = false;
+      for (; i < html.length; i++) {
+        const ch = html[i];
+        if (instr) {
+          if (esc) esc = false;
+          else if (ch === "\\") esc = true;
+          else if (ch === '"') instr = false;
+        } else if (ch === '"') instr = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}") { depth--; if (!depth) break; }
+      }
+      try { return JSON.parse(html.slice(html.lastIndexOf("{", i), i + 1)); } catch { /* next */ }
+    }
+    idx = html.indexOf(key, idx + key.length);
+  }
+  const em = html.match(/"ytInitialPlayerResponse"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
+  if (em) {
+    try { return JSON.parse(JSON.parse('"' + em[1] + '"')); } catch { /* not json */ }
+  }
+  return null;
+}
+
 export async function getVisitorData() {
   const cachedGet = await caches.default.match("https://ayt-cache.local/visitorData")
     .then((r) => (r ? r.json() : null))
@@ -289,6 +323,49 @@ export async function getVisitorData() {
     }
   } catch { /* fall through */ }
   return "";
+}
+
+const INV_APIS = ["https://inv.nadeko.net", "https://yewtu.be", "https://invidious.nerdvpn.de"];
+
+async function invidiousStreams(vid) {
+  for (const base of INV_APIS) {
+    try {
+      const ctrl = new AbortController();
+      const to = setTimeout(() => ctrl.abort(), 6000);
+      const r = await fetch(`${base}/api/v1/videos/${vid}?fields=formatStreams,adaptiveFormats,title,author,authorId,lengthSeconds,viewCount,publishedText,descriptionHtml`, { signal: ctrl.signal });
+      clearTimeout(to);
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (!j?.title) continue;
+      const all = (j.adaptiveFormats || []).concat(j.formatStreams || []);
+      const withUrl = all.filter((f) => f.url);
+      const stripTags = (s) => String(s || "").replace(/<[^>]*>/g, "");
+      const video = withUrl
+        .filter((f) => /video\//.test(f.type || ""))
+        .map((f) => ({ itag: f.itag, url: f.url, codecs: f.type || "", height: f.height ? parseInt(f.height, 10) : 0, bitrate: f.bitrate || 0 }))
+        .sort((a, b) => (b.height || 0) - (a.height || 0));
+      const audio = withUrl
+        .filter((f) => /audio\//.test(f.type || ""))
+        .map((f) => ({ itag: f.itag, url: f.url, codecs: f.type || "", height: 0, bitrate: f.bitrate || 0 }))
+        .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+      if (!video.length && !audio.length) continue;
+      const prog = withUrl.find((f) => /video\//.test(f.type || ""));
+      return {
+        title: j.title,
+        channel: j.author || "",
+        channel_id: j.authorId || "",
+        views: j.viewCount || null,
+        date: j.publishedText || "",
+        duration: j.lengthSeconds ? parseInt(j.lengthSeconds, 10) : null,
+        description: stripTags(j.descriptionHtml) || "",
+        isLive: false,
+        single: prog ? prog.url : null,
+        formats: { video, audio },
+        via: "invidious",
+      };
+    } catch { /* try next instance */ }
+  }
+  return null;
 }
 
 export async function getVideoStreams(vid) {
@@ -326,6 +403,8 @@ export async function getVideoStreams(vid) {
       ? `watch page says: ${page.data.playabilityStatus.reason || page.data.playabilityStatus.status}`
       : "watch page unavailable";
     if (!vd || !data) {
+      const via = await invidiousStreams(vid);
+      if (via) return via;
       const err = {
         err: true,
         error: (lastStatus || "unknown") + ". " + pageNote + ". Retry later, or open the video on youtube.com once and try again.",
@@ -333,5 +412,3 @@ export async function getVideoStreams(vid) {
       return err;
     }
     return pickInfo(data) || { err: true, error: "YouTube did not return playable streams for this video." };
-  });
-}

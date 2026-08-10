@@ -2,7 +2,9 @@ import { json } from "../_lib/inn.js";
 
 export async function onRequest(context) {
   const target = new URL(context.request.url).searchParams.get("u") || "";
-  if (!/^https:\/\/[a-z0-9-]+\.googlevideo\.com\/.*$/i.test(target)) {
+  const ok = /^https:\/\/[a-z0-9-]+\.googlevideo\.com\/.*$/i.test(target) ||
+    /^https:\/\/(inv\.nadeko\.net|yewtu\.be|invidious\.nerdvpn\.de)\/.*$/i.test(target);
+  if (!ok) {
     return json({ error: "forbidden" }, 403);
   }
   const headers = { "User-Agent": "Mozilla/5.0" };
