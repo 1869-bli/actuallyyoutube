@@ -689,7 +689,7 @@ async function renderMeta(info, v) {
   setSubButton(isSubbed(info.channel_id));
 }
 
-function openVideo(listIndex) {
+async function openVideo(listIndex) {
   const v = state.results[listIndex];
   if (!v) return;
   state.index = listIndex;
