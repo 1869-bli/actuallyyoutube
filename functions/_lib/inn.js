@@ -247,19 +247,8 @@ async function playerFromPage(vid) {
 function pickInfo(data) {
   const vd = data?.videoDetails;
   if (!vd) return null;
-  const sd = data?.streamingData || {};
-  const all = (sd.formats || []).concat(sd.adaptiveFormats || []);
-  const withUrl = all.map((f) => ({ ...f, url: f.url || decipherUrl(f) })).filter((f) => f.url);
-  const video = withUrl
-    .filter((f) => /video\/mp4/.test(f.mimeType || "") && !/av01/.test(f.mimeType || ""))
-    .map(fmtInfo)
-    .sort((a, b) => (b.height || 0) - (a.height || 0));
-  const audio = withUrl
-    .filter((f) => /audio\/mp4/.test(f.mimeType || ""))
-    .map(fmtInfo)
-    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-  const prog = pickProgressive(sd.formats);
-  return {
+  const like = parseInt(data?.microformat?.playerMicroformatRenderer?.likes, 10);
+  const info = {
     title: vd.title,
     channel: vd.author,
     channel_id: vd.channelId || "",
@@ -268,9 +257,24 @@ function pickInfo(data) {
     duration: vd.lengthSeconds ? parseInt(vd.lengthSeconds, 10) : null,
     description: vd.shortDescription || "",
     isLive: !!vd.isLiveContent,
-    single: prog ? prog.url : null,
-    formats: { video, audio },
+    likes: Number.isFinite(like) ? like : null,
+    single: null,
+    formats: { video: [], audio: [] },
   };
+  const sd = data?.streamingData || {};
+  const all = (sd.formats || []).concat(sd.adaptiveFormats || []);
+  const withUrl = all.map((f) => ({ ...f, url: f.url || decipherUrl(f) })).filter((f) => f.url);
+  info.formats.video = withUrl
+    .filter((f) => /video\/mp4/.test(f.mimeType || "") && !/av01/.test(f.mimeType || ""))
+    .map(fmtInfo)
+    .sort((a, b) => (b.height || 0) - (a.height || 0));
+  info.formats.audio = withUrl
+    .filter((f) => /audio\/mp4/.test(f.mimeType || ""))
+    .map(fmtInfo)
+    .sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+  const prog = pickProgressive(sd.formats);
+  info.single = prog ? prog.url : null;
+  return info;
 }
 
 async function playerFromEmbed(vid) {
@@ -379,6 +383,13 @@ export async function getVideoStreams(vid) {
       }
     } catch { /* fall through to ladder */ }
     const realVisitor = page?.visitor || (await getVisitorData());
+    try {
+      const ep = await playerFromEmbed(vid);
+      if (ep?.playabilityStatus?.status === "OK" && ep.streamingData) {
+        const info = pickInfo(ep);
+        if (info && (info.formats.video.length || info.single)) return info;
+      }
+    } catch { /* embed page unavailable */ }
     const attempts = [
       { client: CLIENT_VR, visitor: page?.visitor || "" },
       { client: CLIENT_VR, visitor: realVisitor },

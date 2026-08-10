@@ -11,6 +11,7 @@ export async function onRequest(context) {
     channel: info.channel || "Unknown",
     channel_id: info.channel_id,
     views: info.views,
+    likes: info.likes,
     date: info.date,
     duration: info.duration,
     description: info.description,

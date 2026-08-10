@@ -629,6 +629,7 @@ async function openVideo(listIndex) {
     }
     $("#w-stats").textContent = [
       fmtViews(info.views),
+      info.likes ? "❤ " + fmtViews(info.likes) : "",
       daysAgo(info.date),
       info.duration ? fmtDur(info.duration) : "",
       info.channel_id ? "Subscribed \u2014 \u2713 saved locally" : "",
@@ -643,6 +644,7 @@ async function openVideo(listIndex) {
     updateControls();
     renderSbMarkers();
     setupSb(v.id, info.duration);
+    renderComments(v.id);
     video.poster = info.thumbnail;
     if (info.isLive) toast("Live streams may not play in this version.");
     setTimeout(() => {
@@ -923,6 +925,44 @@ function renderAccountMenu() {
 
 function openAccMenu(forceForm) {
   $("#acct-menu").classList.toggle("hidden");
+}
+
+/* ---------- comments ---------- */
+function renderComments(vid) {
+  const box = $("#w-comments");
+  const list = $("#w-comments-list");
+  box.classList.add("hidden");
+  list.innerHTML = '<div class="empty"><div class="spinner"></div></div>';
+  fetch("/api/comments?id=" + vid)
+    .then((r) => r.json())
+    .then((j) => {
+      box.classList.remove("hidden");
+      if (j.error || !j.comments?.length) {
+        list.innerHTML = "";
+        list.innerHTML = '<p class="muted">' + escapeHtml(j.error || "No comments.") + "</p>";
+        return;
+      }
+      list.innerHTML = "";
+      for (const c of j.comments) {
+        const row = document.createElement("div");
+        row.className = "comment";
+        const initial = (c.author || "?")[0]?.toUpperCase() || "?";
+        row.innerHTML = `<span class="cav"><img src="${escapeHtml(c.avatar)}" alt="" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'letter',textContent:'${initial}'}))"><span class="letter" style="display:none">${initial}</span></span>
+          <div class="c-body"><p class="c-head"><b>${escapeHtml(c.author)}</b> <span class="muted">${escapeHtml(c.published)}</span></p>
+          <p>${escapeHtml(c.text)}</p>
+          <p class="muted small">👍 ${c.likes}${c.replies ? " \u00B7 " + c.replies + " replies" : ""}</p></div>`;
+        list.appendChild(row);
+      }
+    })
+    .catch(() => {
+      box.classList.remove("hidden");
+      list.innerHTML = "";
+      list.innerHTML = '<p class="muted">Comments unavailable right now.</p>';
+    });
+}
+
+function escapeHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[ch]));
 }
 
 /* ---------- home ---------- */
