@@ -645,10 +645,10 @@ function openCommunityPlayer(vid) {
   const box = $("#com-player");
   box.classList.remove("hidden");
   if (!$("#com-iframe").src.includes(vid)) {
-    $("#com-iframe").src = "https://invidious.tiekoetter.com/embed/" + vid + "?autoplay=1";
+    $("#com-iframe").src = "https://www.youtube-nocookie.com/embed/" + vid + "?autoplay=1&rel=0";
   }
-  $("#com-open").href = "https://invidious.tiekoetter.com/watch?v=" + vid;
-  toast("Community player is ready.");
+  $("#com-open").href = "https://www.youtube.com/watch?v=" + vid;
+  toast("Backup player is ready.");
 }
 
 async function renderMeta(info, v) {
@@ -701,7 +701,7 @@ async function openVideo(listIndex) {
   $("#ctrl").classList.remove("hidden");
   $("#com-player").classList.remove("hidden");
   const cf = $("#com-iframe");
-  if (!cf.src.includes(v.id)) cf.src = "https://invidious.tiekoetter.com/embed/" + v.id + "?autoplay=1";
+  if (!cf.src.includes(v.id)) cf.src = "https://www.youtube-nocookie.com/embed/" + v.id + "?autoplay=1&rel=0";
   overlay.classList.remove("err");
   $("#overlay-msg").textContent = "Preparing stream...";
   mseClose();
