@@ -212,6 +212,7 @@ async function playerFromPage(vid) {
   });
   if (!resp.ok) return null;
   const html = await resp.text();
+  const visitor = (html.match(/"VISITOR_DATA":"([^"]+)"/) || [])[1] || "";
   const key = "ytInitialPlayerResponse";
   let idx = html.indexOf(key);
   while (idx >= 0) {
@@ -231,16 +232,16 @@ async function playerFromPage(vid) {
         else if (ch === "}") { depth--; if (!depth) break; }
       }
       try {
-        return JSON.parse(html.slice(html.lastIndexOf("{", i), i + 1));
+        return { data: JSON.parse(html.slice(html.lastIndexOf("{", i), i + 1)), visitor };
       } catch { /* try next occurrence */ }
     }
     idx = html.indexOf(key, idx + key.length);
   }
   const em = html.match(/"ytInitialPlayerResponse"\s*:\s*"((?:[^"\\]|\\.)*)"/s);
   if (em) {
-    try { return JSON.parse(JSON.parse('"' + em[1] + '"')); } catch { /* not json */ }
+    try { return { data: JSON.parse(JSON.parse('"' + em[1] + '"')), visitor }; } catch { /* not json */ }
   }
-  return null;
+  return { data: null, visitor };
 }
 
 function pickInfo(data) {
@@ -291,33 +292,44 @@ export async function getVisitorData() {
 }
 
 export async function getVideoStreams(vid) {
-  return cached(`player:v4:${vid}`, 3600, async () => {
+  return cached(`player:v5:${vid}`, 3600, async () => {
+    let page = null;
     try {
-      const page = await playerFromPage(vid);
-      if (page?.playabilityStatus?.status === "OK" && page?.streamingData) {
-        const info = pickInfo(page);
+      page = await playerFromPage(vid);
+      if (page?.data?.playabilityStatus?.status === "OK" && page.data?.streamingData) {
+        const info = pickInfo(page.data);
         if (info && (info.formats.video.length || info.single)) return info;
       }
     } catch { /* fall through to ladder */ }
-    const realVisitor = await getVisitorData();
+    const realVisitor = page?.visitor || (await getVisitorData());
     const attempts = [
-      { client: CLIENT_VR, visitor: "" },
+      { client: CLIENT_VR, visitor: page?.visitor || "" },
       { client: CLIENT_VR, visitor: realVisitor },
       { client: { ...CLIENT_VR, androidSdkVersion: 31 }, visitor: freshVisitor(), extra: {} },
       { client: { ...CLIENT_VR, clientVersion: "1.60.20" }, visitor: freshVisitor(), extra: {} },
       { client: CLIENT_VR, visitor: realVisitor, extra: { thirdParty: { embedUrl: "https://www.youtube.com/" } } },
     ];
     let data = null;
+    let lastStatus = "";
     for (const a of attempts) {
       try {
         const r = await ytJson("player", { videoId: vid }, { hl: "en", gl: "US", ...a.extra }, a.client, a.visitor);
-        if (r.data?.playabilityStatus?.status === "OK") { data = r.data; break; }
+        const ps = r.data?.playabilityStatus;
+        if (ps?.status === "OK") { data = r.data; break; }
+        if (ps) lastStatus = ps.reason || ps.status || `http ${r.status}`;
+        else lastStatus = `http ${r.status}`;
       } catch { /* keep trying */ }
       await new Promise((res) => setTimeout(res, 700));
     }
     const vd = data?.videoDetails;
+    const pageNote = page?.data?.playabilityStatus
+      ? `watch page says: ${page.data.playabilityStatus.reason || page.data.playabilityStatus.status}`
+      : "watch page unavailable";
     if (!vd || !data) {
-      const err = { err: true, error: "YouTube blocked this request (bot check). Try again in a few minutes." };
+      const err = {
+        err: true,
+        error: (lastStatus || "unknown") + ". " + pageNote + ". Retry later, or open the video on youtube.com once and try again.",
+      };
       return err;
     }
     return pickInfo(data) || { err: true, error: "YouTube did not return playable streams for this video." };
