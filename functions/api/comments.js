@@ -1,6 +1,13 @@
 import { json } from "../_lib/inn.js";
 
-const INV_APIS = ["https://inv.nadeko.net", "https://yewtu.be", "https://invidious.nerdvpn.de", "https://invidious.f5.si"];
+const INV_APIS = [
+  "https://invidious.f5.si",
+  "https://invidious.tiekoetter.com",
+  "https://yt.chocolatemoo53.com",
+  "https://invidious.nerdvpn.de",
+  "https://inv.nadeko.net",
+  "https://yewtu.be",
+];
 
 export async function onRequest(context) {
   const vid = new URL(context.request.url).searchParams.get("id") || "";

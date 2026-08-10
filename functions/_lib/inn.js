@@ -379,7 +379,14 @@ export async function getVisitorData() {
   return "";
 }
 
-const INV_APIS = ["https://inv.nadeko.net", "https://yewtu.be", "https://invidious.nerdvpn.de"];
+const INV_APIS = [
+  "https://invidious.f5.si",
+  "https://invidious.tiekoetter.com",
+  "https://yt.chocolatemoo53.com",
+  "https://invidious.nerdvpn.de",
+  "https://inv.nadeko.net",
+  "https://yewtu.be",
+];
 
 async function invidiousStreams(vid) {
   for (const base of INV_APIS) {
