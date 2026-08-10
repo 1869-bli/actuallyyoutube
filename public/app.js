@@ -653,6 +653,17 @@ function openCommunityPlayer(vid) {
 
 async function renderMeta(info, v) {
   if (!info.channel_id && v.channel_id) { info.channel_id = v.channel_id; info.channel = info.channel || v.channel; }
+  if (okAvatar(info.avatar || v.avatar)) {
+    const av = $("#w-avatar");
+    av.className = "avatar";
+    av.textContent = "";
+    const img = document.createElement("img");
+    img.src = info.avatar || v.avatar;
+    img.style.cssText = "width:100%;height:100%;border-radius:50%;object-fit:cover;display:block";
+    img.onerror = () => { av.className = "avatar letter"; av.textContent = (info.channel || "?").trim()[0]?.toUpperCase() || "?"; };
+    img.alt = "";
+    av.appendChild(img);
+  }
   $("#w-title").textContent = info.title || v.title;
   $("#w-channel").textContent = info.channel || "";
   const initial = (info.channel || "?").trim()[0]?.toUpperCase() || "?";
@@ -733,11 +744,9 @@ async function openVideo(listIndex) {
     const res = await fetch("/api/video?id=" + v.id);
     const info = await res.json();
     if (info.error) {
-      if (info.title || info.views || info.likes) {
-        state.current = info;
-        renderMeta(info, v);
-        renderComments(v.id);
-      }
+      state.current = info;
+      renderMeta(info, v);
+      renderComments(v.id);
       throw new Error(info.error);
     }
     state.current = info;
