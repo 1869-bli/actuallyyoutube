@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0d0d0d">
+<title>actuallyYOUtube</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+<link rel="stylesheet" href="/static/style.css">
+<script>document.documentElement.dataset.theme = localStorage.getItem("ayt_theme") || "dark";</script>
+</head>
+<body>
+
+<header>
+  <div class="brand" onclick="goHome()" title="Home">
+    <span class="name">actually<span class="yt">YOU</span>tube</span>
+  </div>
+
+  <form id="search-form" class="search">
+    <input id="search-input" type="search" placeholder="Search videos..." autocomplete="off" spellcheck="false">
+    <button type="submit" aria-label="Search">
+      <svg viewBox="0 0 24 24" width="20" height="20"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </form>
+
+  <div class="head-actions">
+    <button id="sb-toggle" class="sb-on" title="SponsorBlock: auto-skip sponsor segments">SB ON</button>
+    <button id="theme-btn" class="icon-btn" title="Toggle theme" aria-label="Toggle theme"></button>
+    <button id="install-btn" class="icon-btn hidden" title="Install as an app">&#10515;</button>
+    <div class="acct" id="acct">
+      <button id="acct-btn" class="acct-btn">+</button>
+      <div class="menu hidden" id="acct-menu"></div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section id="home" class="view">
+    <div id="chips" class="chips"></div>
+
+    <div id="subs-wrap" class="hidden">
+      <h2 class="section-title">Subscriptions</h2>
+      <div id="subs-list"></div>
+    </div>
+
+    <div id="history-wrap" class="hidden">
+      <h2 class="section-title">Continue watching</h2>
+      <div id="history" class="grid"></div>
+    </div>
+
+    <div id="home-empty" class="empty hidden">
+      <p>Your feed is empty.</p>
+      <p class="muted">Search above, watch something, then hit Subscribe on a channel you like.</p>
+    </div>
+  </section>
+
+  <section id="results" class="view hidden">
+    <h2 id="results-title" class="section-title"></h2>
+    <div id="chan-hero" class="chan-hero hidden"></div>
+    <div id="results-grid" class="grid"></div>
+    <div id="results-empty" class="empty hidden"></div>
+  </section>
+
+  <section id="watch" class="view hidden">
+    <div class="watch-col">
+      <button id="back-btn" class="back">&#8592; Back</button>
+
+      <div class="player-wrap" id="wrap">
+        <video id="player" playsinline preload="auto"></video>
+        <div id="overlay" class="overlay">
+          <div class="spinner"></div>
+          <p id="overlay-msg">Preparing stream...</p>
+        </div>
+        <div class="ctrl" id="ctrl">
+          <div class="prog" id="prog">
+            <div class="pbuf" id="pbuf"></div>
+            <div class="pplay" id="pplay"></div>
+            <div class="psb" id="psb"></div>
+            <input type="range" id="seek" min="0" max="0" step="0.1" value="0" aria-label="Seek">
+          </div>
+          <div class="cbtns">
+            <button id="btn-play" class="pc" aria-label="Play / pause"></button>
+            <span class="time" id="time">0:00 / --:--</span>
+            <span class="space"></span>
+            <button id="btn-mute" class="pc" aria-label="Mute"></button>
+            <input type="range" id="vol" class="vol" min="0" max="1" step="0.05" value="1" aria-label="Volume">
+            <button id="btn-fs" class="pc" aria-label="Fullscreen"></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="meta">
+        <h1 id="w-title"></h1>
+        <div class="meta-row">
+          <span class="avatar" id="w-avatar"></span>
+          <div class="chan">
+            <button id="w-channel" class="chan-name"></button>
+            <p id="w-stats" class="muted"></p>
+          </div>
+          <button id="w-sub" class="sub">Subscribe</button>
+          <a id="w-original" class="origin" target="_blank" rel="noopener">Open on YouTube</a>
+        </div>
+        <details id="w-desc-box" class="desc">
+          <summary>Description</summary>
+          <pre id="w-desc"></pre>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+</main>
+
+<footer>actuallyYOUtube &middot; local · private · ad-free · SponsorBlock ready</footer>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
