@@ -645,10 +645,10 @@ function openCommunityPlayer(vid) {
   const box = $("#com-player");
   box.classList.remove("hidden");
   if (!$("#com-iframe").src.includes(vid)) {
-    $("#com-iframe").src = "https://invidious.tiekoetter.com/embed/" + vid + "?autoplay=0";
+    $("#com-iframe").src = "https://invidious.tiekoetter.com/embed/" + vid + "?autoplay=1";
   }
   $("#com-open").href = "https://invidious.tiekoetter.com/watch?v=" + vid;
-  toast("Community player is ready \u2014 click play inside it.");
+  toast("Community player is ready.");
 }
 
 async function openVideo(listIndex) {
@@ -661,7 +661,9 @@ async function openVideo(listIndex) {
   const overlay = $("#overlay");
   $("#player").classList.remove("hidden");
   $("#ctrl").classList.remove("hidden");
-  $("#com-player").classList.add("hidden");
+  $("#com-player").classList.remove("hidden");
+  const cf = $("#com-iframe");
+  if (!cf.src.includes(v.id)) cf.src = "https://invidious.tiekoetter.com/embed/" + v.id + "?autoplay=1";
   overlay.classList.remove("err");
   $("#overlay-msg").textContent = "Preparing stream...";
   mseClose();
@@ -670,8 +672,6 @@ async function openVideo(listIndex) {
   state.player.total = 0;
   state.player.offset = 0;
   state.current = null;
-  const cf = $("#com-iframe");
-  if (!cf.src.includes(v.id)) cf.src = "https://invidious.tiekoetter.com/embed/" + v.id + "?autoplay=0";
   updateControls();
   renderSbMarkers();
   document.title = v.title + " \u2014 actuallyYOUtube";
@@ -705,6 +705,8 @@ async function openVideo(listIndex) {
       throw new Error(info.error);
     }
     state.current = info;
+    $("#com-player").classList.add("hidden");
+    $("#com-iframe").removeAttribute("src");
     state.player.total = info.duration || 0;
     $("#w-title").textContent = info.title;
     $("#w-channel").textContent = info.channel;

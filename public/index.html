@@ -68,6 +68,10 @@
 
       <div class="player-wrap" id="wrap">
         <video id="player" playsinline preload="auto"></video>
+        <div id="com-player" class="com-player hidden">
+          <iframe id="com-iframe" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen title="Community player"></iframe>
+          <a id="com-open" class="com-open" href="#" target="_blank" rel="noopener" title="Open in new tab">&#8599;</a>
+        </div>
         <div id="overlay" class="overlay">
           <div class="spinner"></div>
           <p id="overlay-msg">Preparing stream...</p>
@@ -87,10 +91,6 @@
             <input type="range" id="vol" class="vol" min="0" max="1" step="0.05" value="1" aria-label="Volume">
             <button id="btn-fs" class="pc" aria-label="Fullscreen"></button>
           </div>
-        </div>
-        <div id="com-player" class="com-player hidden">
-          <iframe id="com-iframe" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen title="Community player"></iframe>
-          <a id="com-open" class="com-open" href="#" target="_blank" rel="noopener" title="Open in new tab">&#8599;</a>
         </div>
       </div>
 
