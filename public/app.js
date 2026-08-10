@@ -644,9 +644,11 @@ function openCommunityPlayer(vid) {
   $("#overlay").classList.add("hidden");
   const box = $("#com-player");
   box.classList.remove("hidden");
-  $("#com-iframe").src = "https://invidious.tiekoetter.com/embed/" + vid + "?autoplay=1";
+  if (!$("#com-iframe").src.includes(vid)) {
+    $("#com-iframe").src = "https://invidious.tiekoetter.com/embed/" + vid + "?autoplay=0";
+  }
   $("#com-open").href = "https://invidious.tiekoetter.com/watch?v=" + vid;
-  toast("Community player opened (invidious.tiekoetter.com)");
+  toast("Community player is ready \u2014 click play inside it.");
 }
 
 async function openVideo(listIndex) {
@@ -668,6 +670,8 @@ async function openVideo(listIndex) {
   state.player.total = 0;
   state.player.offset = 0;
   state.current = null;
+  const cf = $("#com-iframe");
+  if (!cf.src.includes(v.id)) cf.src = "https://invidious.tiekoetter.com/embed/" + v.id + "?autoplay=0";
   updateControls();
   renderSbMarkers();
   document.title = v.title + " \u2014 actuallyYOUtube";
