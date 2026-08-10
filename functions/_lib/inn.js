@@ -18,9 +18,17 @@ export function json(data, status = 200) {
   });
 }
 
-export async function ytJson(endpoint, data, extraContext = {}, client = CLIENT_WEB) {
+function freshVisitor() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  let s = "";
+  for (const b of bytes) s += String.fromCharCode(b);
+  return "Cgt" + btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "") + "Sg";
+}
+
+export async function ytJson(endpoint, data, extraContext = {}, client = CLIENT_WEB, visitor = "") {
   const body = JSON.stringify({
-    context: { client, ...extraContext },
+    context: { client: { ...client, ...(visitor ? { visitorData: visitor } : {}) }, ...extraContext },
     ...data,
   });
   let resp = await fetch(`https://www.youtube.com/youtubei/v1/${endpoint}?key=${KEY}`, {
@@ -181,12 +189,22 @@ function fmtInfo(f) {
 }
 
 export async function getVideoStreams(vid) {
-  return cached(`player:${vid}`, 900, async () => {
-    const { data } = await ytJson("player", { videoId: vid }, {}, CLIENT_VR);
+  return cached(`player:${vid}`, 3600, async () => {
+    const attempts = [
+      { client: CLIENT_VR, visitor: "" },
+      { client: CLIENT_VR, visitor: freshVisitor() },
+      { client: { ...CLIENT_VR, androidSdkVersion: 31 }, visitor: freshVisitor() },
+      { client: { ...CLIENT_VR, clientVersion: "1.60.20" }, visitor: freshVisitor() },
+    ];
+    let data = null;
+    for (const a of attempts) {
+      const r = await ytJson("player", { videoId: vid }, { hl: "en", gl: "US" }, a.client, a.visitor);
+      if (r.data?.playabilityStatus?.status === "OK") { data = r.data; break; }
+      await new Promise((res) => setTimeout(res, 700));
+    }
     const vd = data?.videoDetails;
-    const ok = data?.playabilityStatus?.status === "OK";
-    if (!vd || !ok) {
-      const err = { error: data?.playabilityStatus?.reason || data?.playabilityStatus?.status || "unplayable" };
+    if (!vd || !data) {
+      const err = { error: "YouTube blocked this request (bot check). Try again in a few minutes." };
       return { err };
     }
     const sd = data?.streamingData || {};

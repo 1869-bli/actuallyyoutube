@@ -228,13 +228,6 @@ async function doSearch(q) {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     const results = data.results;
-    const ids = [...new Set(results.map((r) => r.channel_id).filter(Boolean))].slice(0, 8);
-    if (ids.length) {
-      try {
-        const av = await (await fetch("/api/avatars?ids=" + ids.join(","))).json();
-        results.forEach((r) => { if (r.channel_id) r.avatar = av[r.channel_id] || ""; });
-      } catch { /* pfp optional */ }
-    }
     grid.innerHTML = "";
     if (!results.length) {
       $("#results-empty").textContent = "Nothing found for \u201C" + q + "\u201D.";
@@ -245,6 +238,17 @@ async function doSearch(q) {
     state.index = 0;
     window.location.hash = "?q=" + encodeURIComponent(q);
     renderCards(results, grid, (i) => openVideo(i));
+    const ids = [...new Set(results.map((r) => r.channel_id).filter(Boolean))].slice(0, 8);
+    if (ids.length) {
+      try {
+        const av = await (await fetch("/api/avatars?ids=" + ids.join(","))).json();
+        let changed = false;
+        results.forEach((r) => { if (r.channel_id && av[r.channel_id] && !r.avatar) { r.avatar = av[r.channel_id]; changed = true; } });
+        if (changed && !grid.closest(".hidden")) {
+          renderCards(results, grid, (i) => openVideo(i));
+        }
+      } catch { /* pfp optional */ }
+    }
   } catch (e) {
     grid.innerHTML = "";
     toast("Search failed: " + e.message);
