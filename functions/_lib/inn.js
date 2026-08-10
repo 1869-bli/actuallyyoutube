@@ -193,14 +193,31 @@ function fmtInfo(f) {
   return { itag: f.itag, url: f.url, codecs: f.mimeType || "", height: f.height, width: f.width, bitrate: f.bitrate };
 }
 
+export async function getVisitorData() {
+  const cachedGet = await (await caches.default.match("https://ayt-cache.local/visitorData")).json().catch(() => null);
+  if (cachedGet && Date.now() - cachedGet.at < 25 * 60 * 1000) return cachedGet.v;
+  try {
+    const html = await (await fetch("https://www.youtube.com/watch?v=dQw4w9WgXcQ", {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36" },
+    })).text();
+    const m = html.match(/"VISITOR_DATA":"([^"]+)"/) || html.match(/"visitorData":"([^"]+)"/);
+    if (m && m[1]) {
+      await caches.default.put("https://ayt-cache.local/visitorData", new Response(JSON.stringify({ v: m[1], at: Date.now() }), { headers: { "Cache-Control": "s-maxage=1800" } }));
+      return m[1];
+    }
+  } catch { /* fall through */ }
+  return "";
+}
+
 export async function getVideoStreams(vid) {
-  return cached(`player:v2:${vid}`, 3600, async () => {
+  return cached(`player:v3:${vid}`, 3600, async () => {
+    const realVisitor = await getVisitorData();
     const attempts = [
-      { client: CLIENT_VR, visitor: "", extra: {} },
-      { client: CLIENT_VR, visitor: freshVisitor(), extra: {} },
+      { client: CLIENT_VR, visitor: "" },
+      { client: CLIENT_VR, visitor: realVisitor },
       { client: { ...CLIENT_VR, androidSdkVersion: 31 }, visitor: freshVisitor(), extra: {} },
       { client: { ...CLIENT_VR, clientVersion: "1.60.20" }, visitor: freshVisitor(), extra: {} },
-      { client: CLIENT_VR, visitor: freshVisitor(), extra: { thirdParty: { embedUrl: "https://www.youtube.com/" } } },
+      { client: CLIENT_VR, visitor: realVisitor, extra: { thirdParty: { embedUrl: "https://www.youtube.com/" } } },
     ];
     let data = null;
     for (const a of attempts) {
@@ -212,8 +229,8 @@ export async function getVideoStreams(vid) {
     }
     const vd = data?.videoDetails;
     if (!vd || !data) {
-      const err = { error: "YouTube blocked this request (bot check). Try again in a few minutes." };
-      return { err };
+      const err = { err: true, error: "YouTube blocked this request (bot check). Try again in a few minutes." };
+      return err;
     }
     const sd = data?.streamingData || {};
     const all = (sd.formats || []).concat(sd.adaptiveFormats || []);

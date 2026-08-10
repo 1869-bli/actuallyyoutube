@@ -637,6 +637,7 @@ async function openVideo(listIndex) {
     if (info.description) {
       $("#w-desc").textContent = info.description;
       $("#w-desc-box").classList.remove("hidden");
+      $("#w-desc-box").open = true;
     }
     setSubButton(isSubbed(info.channel_id));
     updateControls();
@@ -747,12 +748,14 @@ async function loadAccounts() {
   try {
     const res = await fetch("/api/accounts");
     state.cloud = !res.ok;
+    state.accounts = state.cloud ? lsAccounts() : await res.json();
   } catch {
     state.cloud = true;
+    state.accounts = lsAccounts();
   }
-  state.accounts = state.cloud ? lsAccounts() : await (await fetch("/api/accounts")).json();
   const id = localStorage.getItem("ayt_account");
-  state.account = state.accounts.find((a) => a.id === id) || state.accounts[0] || null;
+  state.account = (state.accounts || []).find((a) => a.id === id) || state.accounts?.[0] || null;
+  state.accounts = state.accounts || [];
   if (state.account) localStorage.setItem("ayt_account", state.account.id);
   renderAccountMenu();
 }
